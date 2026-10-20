@@ -17,6 +17,8 @@ concurrency:
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PYTHONIOENCODING: utf-8
+  GITLEAKS_VERSION: "8.30.0"
+  GITLEAKS_LINUX_X64_SHA256: 79a3ab579b53f71efd634f3aaf7e04a0fa0cf206b7ed434638d1547a2470a66e # pragma: allowlist secret
   SEMGREP_VERSION: "1.181.0"
 
 jobs:
@@ -49,9 +51,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Scan Git history with Gitleaks
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          archive="${RUNNER_TEMP}/gitleaks.tar.gz"
+          binary="${RUNNER_TEMP}/gitleaks"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_LINUX_X64_SHA256}  ${archive}" | sha256sum --check --strict
+          tar --extract --gzip --file "$archive" --directory "${RUNNER_TEMP}" gitleaks
+          chmod 0755 "$binary"
+          "$binary" git --redact --verbose --config .gitleaks.toml
 
   semgrep:
     name: Semgrep SAST
