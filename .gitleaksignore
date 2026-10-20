@@ -1,0 +1,10 @@
+# Exact historical fingerprints from the abandoned May 2026 scanner examples.
+# The values were synthetic. Fingerprints are intentionally narrower than path,
+# regex, or commit allowlists, so future findings in the same files still fail.
+2f9f007d5d1d2e1febc89b836d0eb7101210389b:.secrets.baseline:generic-api-key:134
+2f9f007d5d1d2e1febc89b836d0eb7101210389b:.secrets.baseline:generic-api-key:142
+2f9f007d5d1d2e1febc89b836d0eb7101210389b:.secrets.baseline:generic-api-key:150
+2f9f007d5d1d2e1febc89b836d0eb7101210389b:.secrets.baseline:generic-api-key:160
+2f9f007d5d1d2e1febc89b836d0eb7101210389b:.secrets.baseline:generic-api-key:168
+2f9f007d5d1d2e1febc89b836d0eb7101210389b:.secrets.baseline:generic-api-key:178
+c943f94b4ec760ab6ceb8cdc3b40713e9756ab89:test-secret.txt:generic-api-key:1
