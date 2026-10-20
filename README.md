@@ -10,7 +10,7 @@ build and dependency model.
 - Semgrep SAST with a pinned engine and current registry rules;
 - Trivy dependency, secret, and IaC scanning;
 - a CycloneDX SBOM retained as a workflow artifact;
-- CodeQL for detected Python, Go, and compiled C/C++ sources;
+- CodeQL for GitHub Actions plus detected Python, Go, and compiled C/C++ sources;
 - SHA-pinned GitHub Actions, fixed runner images, explicit timeouts, read-only
   default permissions, and checkout credentials disabled;
 - one stable branch-protection context: `Security / required`;

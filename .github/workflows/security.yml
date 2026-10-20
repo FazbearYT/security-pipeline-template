@@ -137,7 +137,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Detect C/C++, Go, and Python sources
+      - name: Detect Actions, C/C++, Go, and Python sources
         id: detect
         shell: bash
         run: |
@@ -156,7 +156,8 @@ jobs:
               "go": {".go"},
               "python": {".py"},
           }
-          found = set()
+          # Every repository created from this template has workflow code to scan.
+          found = {"actions"}
           for path in Path(".").rglob("*"):
               normalized = path.as_posix().removeprefix("./")
               if (
@@ -195,7 +196,7 @@ jobs:
         uses: github/codeql-action/init@48870fdd6b42ee6474ec4207209ff87609271a5e # v4.39.0
         with:
           languages: ${{ matrix.language }}
-          queries: security-and-quality
+          queries: ${{ matrix.language == 'actions' && 'security-extended' || 'security-and-quality' }}
       - name: Autobuild
         uses: github/codeql-action/autobuild@48870fdd6b42ee6474ec4207209ff87609271a5e # v4.39.0
       - name: Analyze

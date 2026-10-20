@@ -33,8 +33,8 @@ zizmor .github/workflows/security.yml
 ```
 
 Before enabling branch protection, push to a disposable branch and verify all jobs.
-The final job must be exactly `Security / required`. A skipped CodeQL matrix is expected
-when the repository has no supported source files; all other jobs must succeed.
+The final job must be exactly `Security / required`. CodeQL always scans GitHub Actions;
+additional matrix jobs appear when supported application source files are detected.
 
 ## Safe negative test
 
