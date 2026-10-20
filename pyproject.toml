@@ -1,4 +1,9 @@
-[tool.bandit]
-# Skip B101 (assert_used) — asserts are acceptable outside production paths.
-# Add more IDs here as needed: skips = ["B101", "B601"]
-skips = ["B101"]
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "S", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]

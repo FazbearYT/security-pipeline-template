@@ -335,3 +335,6 @@ go.work.sum
 # OS
 Thumbs.db
 Desktop.ini
+
+# Claude Code local state
+.claude/

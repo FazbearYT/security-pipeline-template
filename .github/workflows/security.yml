@@ -1,0 +1,224 @@
+name: Security
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONIOENCODING: utf-8
+  SEMGREP_VERSION: "1.181.0"
+
+jobs:
+  policy:
+    name: Repository contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install hash-locked verification tools
+        run: python -m pip install --require-hashes --requirement requirements-dev.lock
+      - name: Run deterministic template checks
+        run: python scripts/ci/run_all.py
+
+  secrets:
+    name: Secret history
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan Git history with Gitleaks
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install pinned Semgrep
+        run: python -m pip install "semgrep==$SEMGREP_VERSION"
+      - name: Scan supported source code
+        run: >-
+          semgrep scan --config p/default --config p/secrets --error --metrics=off
+          --exclude scripts/ci/run_all.py
+          --exclude scripts/ci/validate_repository.py
+          --exclude tests/test_validate_repository.py
+          .
+
+  trivy:
+    name: Dependencies, IaC, and secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan repository with Trivy
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          version: v0.76.0
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+      - name: Generate CycloneDX SBOM
+        if: always()
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          version: v0.76.0
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          exit-code: "0"
+          format: cyclonedx
+          output: sbom.cdx.json
+      - name: Upload SBOM
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: security-sbom
+          path: sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 14
+
+  detect-codeql:
+    name: Detect CodeQL languages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      languages: ${{ steps.detect.outputs.languages }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Detect C/C++, Go, and Python sources
+        id: detect
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          ignored = {".git", ".venv", "venv", "build", "dist", "vendor"}
+          template_helpers = {
+              "scripts/ci/run_all.py",
+              "scripts/ci/validate_repository.py",
+              "tests/test_validate_repository.py",
+          }
+          suffixes = {
+              "cpp": {".c", ".cc", ".cpp", ".cxx"},
+              "go": {".go"},
+              "python": {".py"},
+          }
+          found = set()
+          for path in Path(".").rglob("*"):
+              normalized = path.as_posix().removeprefix("./")
+              if (
+                  not path.is_file()
+                  or normalized in template_helpers
+                  or any(part in ignored for part in path.parts)
+              ):
+                  continue
+              for language, extensions in suffixes.items():
+                  if path.suffix.lower() in extensions:
+                      found.add(language)
+          print("languages=" + json.dumps(sorted(found)))
+          PY
+
+  codeql:
+    name: CodeQL / ${{ matrix.language }}
+    needs: detect-codeql
+    if: needs.detect-codeql.outputs.languages != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(needs.detect-codeql.outputs.languages) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@48870fdd6b42ee6474ec4207209ff87609271a5e # v4.39.0
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@48870fdd6b42ee6474ec4207209ff87609271a5e # v4.39.0
+      - name: Analyze
+        uses: github/codeql-action/analyze@48870fdd6b42ee6474ec4207209ff87609271a5e # v4.39.0
+        with:
+          category: codeql-${{ matrix.language }}
+
+  required:
+    name: Security / required
+    if: always()
+    needs:
+      - policy
+      - secrets
+      - semgrep
+      - trivy
+      - detect-codeql
+      - codeql
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every security stage
+        env:
+          POLICY_RESULT: ${{ needs.policy.result }}
+          SECRETS_RESULT: ${{ needs.secrets.result }}
+          SEMGREP_RESULT: ${{ needs.semgrep.result }}
+          TRIVY_RESULT: ${{ needs.trivy.result }}
+          DETECT_RESULT: ${{ needs.detect-codeql.result }}
+          CODEQL_RESULT: ${{ needs.codeql.result }}
+        shell: bash
+        run: |
+          test "$POLICY_RESULT" = success
+          test "$SECRETS_RESULT" = success
+          test "$SEMGREP_RESULT" = success
+          test "$TRIVY_RESULT" = success
+          test "$DETECT_RESULT" = success
+          test "$CODEQL_RESULT" = success -o "$CODEQL_RESULT" = skipped
